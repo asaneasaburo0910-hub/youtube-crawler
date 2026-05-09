@@ -1,0 +1,39 @@
+name: YouTubeトレンド収集
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 毎日 日本時間 朝11時（UTC 2時）に実行
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: コードをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: ライブラリインストール
+        run: pip install requests
+
+      - name: YouTube トレンド収集実行
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: python youtube_crawler.py
+
+      - name: 結果を保存
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git pull --rebase
+          git add youtube_trends.csv
+          git diff --staged --quiet || git commit -m "📺 YouTube トレンド更新: $(date '+%Y-%m-%d')"
+          git push
