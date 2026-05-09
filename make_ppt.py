@@ -52,6 +52,7 @@ def load_csv():
             keyword_items[label].append(row)
 
     trending.sort(key=lambda x: int(x["rank"]))
+    print("📋 ランク順:", [int(x["rank"]) for x in trending[:10]])
     return trending, keyword_items
 
 
@@ -322,7 +323,7 @@ def main():
 
     # 2. 急上昇：10位→2位（降順）
     top10 = trending[:10]
-    for item in reversed(top10[1:]):   # 10位→2位
+    for item in sorted(top10[1:], key=lambda x: int(x["rank"]), reverse=True):  # 10位→2位
         make_rank_slide(prs, item, int(item["rank"]))
 
     # 3. 1位（特別スライド）
