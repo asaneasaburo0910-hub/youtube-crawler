@@ -6,10 +6,9 @@ from datetime import datetime
 # ============================
 # 設定
 # ============================
-YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")  # GitHubのSecretsから自動取得
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
 OUTPUT_FILE = "youtube_trends.csv"
 
-# 検索キーワード
 SEARCH_QUERIES = [
     {"label": "エンタメ", "query": "エンタメ"},
     {"label": "ゲーム", "query": "ゲーム 実況"},
@@ -27,12 +26,16 @@ def fetch_youtube_trending():
             "part": "snippet,statistics",
             "chart": "mostPopular",
             "regionCode": "JP",
-            "videoCategoryId": "0",  # 全カテゴリ
             "maxResults": 20,
             "key": YOUTUBE_API_KEY,
         }
         res = requests.get(url, params=params, timeout=15)
         data = res.json()
+
+        # デバッグ：レスポンス全体を表示
+        if "error" in data:
+            print(f"❌ APIエラー: {data['error']}")
+            return results
 
         for i, item in enumerate(data.get("items", []), 1):
             snippet = item.get("snippet", {})
@@ -76,11 +79,16 @@ def fetch_youtube_search(query_info):
         res = requests.get(url, params=params, timeout=15)
         data = res.json()
 
-        video_ids = [item["id"]["videoId"] for item in data.get("items", [])]
-        if not video_ids:
+        # デバッグ：エラー詳細を表示
+        if "error" in data:
+            print(f"❌ {query_info['label']} APIエラー: {data['error']['message']}")
             return results
 
-        # 再生数などの詳細を取得
+        video_ids = [item["id"]["videoId"] for item in data.get("items", [])]
+        if not video_ids:
+            print(f"⚠️ {query_info['label']}: 動画IDが取得できませんでした")
+            return results
+
         stats_url = "https://www.googleapis.com/youtube/v3/videos"
         stats_params = {
             "part": "snippet,statistics",
@@ -89,6 +97,10 @@ def fetch_youtube_search(query_info):
         }
         stats_res = requests.get(stats_url, params=stats_params, timeout=15)
         stats_data = stats_res.json()
+
+        if "error" in stats_data:
+            print(f"❌ {query_info['label']} 詳細取得エラー: {stats_data['error']['message']}")
+            return results
 
         items = stats_data.get("items", [])
         items.sort(key=lambda x: int(x.get("statistics", {}).get("viewCount", 0)), reverse=True)
@@ -118,7 +130,6 @@ def fetch_youtube_search(query_info):
 
 
 def save_csv(items):
-    """結果をCSVに保存（追記モード）"""
     file_exists = os.path.exists(OUTPUT_FILE)
     fieldnames = ["type", "label", "title", "channel", "views", "likes", "comments", "rank", "url", "fetched_at"]
 
@@ -133,29 +144,22 @@ def save_csv(items):
 
 def main():
     print(f"🚀 YouTube トレンド収集開始: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"🔑 APIキー確認: {'設定済み' if YOUTUBE_API_KEY else '未設定！'}")
 
     all_results = []
 
-    # 急上昇動画
     trending = fetch_youtube_trending()
     all_results.extend(trending)
 
-    # キーワード検索
     for query in SEARCH_QUERIES:
         items = fetch_youtube_search(query)
         all_results.extend(items)
 
     save_csv(all_results)
 
-    # 上位5件表示
     print("\n📊 急上昇動画 トップ5:")
     for item in [i for i in all_results if i["type"] == "急上昇動画"][:5]:
-        print(f"  {item['rank']}. {item['title'][:40]}... (再生数: {item['views']:,})")
-
-    for query in SEARCH_QUERIES:
-        print(f"\n📊 {query['label']} トップ3:")
-        for item in [i for i in all_results if i["label"] == query["label"]][:3]:
-            print(f"  {item['rank']}. {item['title'][:40]}... (再生数: {item['views']:,})")
+        print(f"  {item['rank']}. {item['title'][:40]} (再生数: {item['views']:,})")
 
     print(f"\n✨ 完了！合計 {len(all_results)} 件")
 
