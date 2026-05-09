@@ -29,11 +29,13 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: python youtube_crawler.py
 
-      - name: 結果を保存
+- name: 結果を保存
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git pull --rebase
           git add youtube_trends.csv
+          git stash
+          git pull --rebase
+          git stash pop
           git diff --staged --quiet || git commit -m "📺 YouTube トレンド更新: $(date '+%Y-%m-%d')"
           git push
