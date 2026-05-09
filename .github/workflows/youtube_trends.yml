@@ -33,7 +33,6 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git pull --rebase origin main
           git add youtube_trends.csv
           git commit -m "📺 YouTube トレンド更新: $(date '+%Y-%m-%d')" || echo "変更なし"
-          git push
+          git push --force
