@@ -1,16 +1,13 @@
 import csv
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from io import BytesIO
 
-# ============================
-# 設定
-# ============================
 CSV_FILE = "youtube_trends.csv"
 OUTPUT_FILE = f"youtube_ranking_{datetime.now().strftime('%Y%m%d')}.pptx"
 
@@ -22,6 +19,7 @@ GRAY     = RGBColor(0xAA, 0xAA, 0xAA)
 GOLD     = RGBColor(0xFF, 0xD7, 0x00)
 SILVER   = RGBColor(0xC0, 0xC0, 0xC0)
 BRONZE   = RGBColor(0xCD, 0x7F, 0x32)
+TEAL     = RGBColor(0x4E, 0xC9, 0xB0)
 RANK_COLORS = [GOLD, SILVER, BRONZE]
 
 
@@ -37,6 +35,17 @@ def load_csv():
         return [], {}
 
     latest_time = max(r["fetched_at"] for r in rows)
+
+    # 前日データで伸び率計算
+    prev_rows = [r for r in rows if r["fetched_at"] != latest_time and r["type"] == "急上昇動画"]
+    prev_views = {}
+    if prev_rows:
+        prev_time = max(r["fetched_at"] for r in prev_rows)
+        for r in prev_rows:
+            if r["fetched_at"] == prev_time:
+                video_id = r["url"].split("v=")[-1].split("&")[0]
+                prev_views[video_id] = int(r["views"])
+
     trending = []
     keyword_items = {}
 
@@ -44,6 +53,10 @@ def load_csv():
         if row["fetched_at"] != latest_time:
             continue
         if row["type"] == "急上昇動画":
+            video_id = row["url"].split("v=")[-1].split("&")[0]
+            prev = prev_views.get(video_id)
+            views = int(row["views"])
+            row["growth_rate"] = round((views - prev) / prev * 100, 1) if prev and prev > 0 else None
             trending.append(row)
         elif row["type"] == "キーワード検索":
             label = row["label"]
@@ -56,11 +69,77 @@ def load_csv():
     return trending, keyword_items
 
 
+def hours_since_published(published_at):
+    """公開からの経過時間（時間）を返す"""
+    try:
+        dt = datetime.strptime(published_at, "%Y-%m-%d %H:%M")
+        now = datetime.now()
+        diff = now - dt
+        return int(diff.total_seconds() / 3600)
+    except Exception:
+        return None
+
+
+def generate_comment(item):
+    """ルールベースで分析コメントを生成"""
+    comments = []
+    views = int(item["views"])
+    likes = int(item.get("likes", 0))
+    comment_count = int(item.get("comments", 0))
+    rank = int(item["rank"])
+    growth = item.get("growth_rate")
+    published_at = item.get("published_at", "")
+    hours = hours_since_published(published_at)
+
+    # 公開からの時間
+    if hours is not None:
+        if hours <= 24:
+            comments.append(f"公開{hours}時間で急上昇入り！")
+        elif hours <= 72:
+            comments.append(f"公開{hours//24}日で急上昇")
+
+    # 再生数
+    if views >= 5_000_000:
+        comments.append("500万再生超の超バズ動画")
+    elif views >= 1_000_000:
+        comments.append("100万再生超の大ヒット")
+    elif views >= 500_000:
+        comments.append("50万再生の注目コンテンツ")
+    elif views >= 100_000:
+        comments.append("10万再生突破の話題作")
+    else:
+        comments.append("急上昇中の新興コンテンツ")
+
+    # 伸び率
+    if growth is not None:
+        if growth >= 200:
+            comments.append(f"前日比+{growth}%の爆発的な伸び")
+        elif growth >= 50:
+            comments.append(f"前日比+{growth}%と急拡散中")
+        elif growth >= 10:
+            comments.append(f"前日比+{growth}%で着実に成長")
+
+    # いいね率
+    if views > 0:
+        like_rate = likes / views * 100
+        if like_rate >= 5:
+            comments.append(f"いいね率{like_rate:.1f}%と視聴者の支持が非常に高い")
+        elif like_rate >= 2:
+            comments.append(f"いいね率{like_rate:.1f}%と好評価")
+
+    # コメント数
+    if comment_count >= 10000:
+        comments.append("コメント1万超の大反響")
+    elif comment_count >= 1000:
+        comments.append("コメント1000件超と議論が活発")
+
+    return "　".join(comments[:3])
+
+
 def get_thumbnail(url):
     try:
         video_id = url.split("v=")[-1].split("&")[0]
-        thumb_url = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
-        res = requests.get(thumb_url, timeout=10)
+        res = requests.get(f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg", timeout=10)
         if res.status_code == 200:
             return BytesIO(res.content)
     except Exception:
@@ -69,197 +148,145 @@ def get_thumbnail(url):
 
 
 def add_bg(slide, prs, color=None):
-    bg = slide.shapes.add_shape(
-        1, Inches(0), Inches(0), prs.slide_width, prs.slide_height
-    )
+    bg = slide.shapes.add_shape(1, Inches(0), Inches(0), prs.slide_width, prs.slide_height)
     bg.fill.solid()
     bg.fill.fore_color.rgb = color or BG_DARK
     bg.line.fill.background()
 
 
+def add_text(slide, text, x, y, w, h, size, color, bold=False, align=PP_ALIGN.LEFT, name="Arial", wrap=False):
+    tf = slide.shapes.add_textbox(x, y, w, h)
+    tf.text_frame.word_wrap = wrap
+    p = tf.text_frame.paragraphs[0]
+    p.alignment = align
+    run = p.add_run()
+    run.text = text
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.color.rgb = color
+    run.font.name = name
+    return tf
+
+
 def make_title_slide(prs, date_str):
-    """タイトルスライド"""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_bg(slide, prs)
-
     bar = slide.shapes.add_shape(1, Inches(0), Inches(2.1), prs.slide_width, Inches(1.3))
     bar.fill.solid()
     bar.fill.fore_color.rgb = RED
     bar.line.fill.background()
-
-    tf = slide.shapes.add_textbox(Inches(0.5), Inches(2.18), Inches(9), Inches(1.0))
-    p = tf.text_frame.paragraphs[0]
-    p.alignment = PP_ALIGN.CENTER
-    run = p.add_run()
-    run.text = "▶  YouTube トレンド ランキング"
-    run.font.size = Pt(34)
-    run.font.bold = True
-    run.font.color.rgb = WHITE
-    run.font.name = "Arial Black"
-
-    tf2 = slide.shapes.add_textbox(Inches(0.5), Inches(3.6), Inches(9), Inches(0.6))
-    p2 = tf2.text_frame.paragraphs[0]
-    p2.alignment = PP_ALIGN.CENTER
-    run2 = p2.add_run()
-    run2.text = f"{date_str}  ·  急上昇 TOP 10 発表"
-    run2.font.size = Pt(15)
-    run2.font.color.rgb = GRAY
-    run2.font.name = "Arial"
+    add_text(slide, "▶  YouTube トレンド ランキング", Inches(0.5), Inches(2.18), Inches(9), Inches(1.0),
+             34, WHITE, bold=True, align=PP_ALIGN.CENTER, name="Arial Black")
+    add_text(slide, f"{date_str}  ·  急上昇 TOP 10 発表", Inches(0.5), Inches(3.6), Inches(9), Inches(0.6),
+             15, GRAY, align=PP_ALIGN.CENTER)
 
 
 def make_rank_slide(prs, item, rank):
-    """1枚に1動画（10位→2位）"""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_bg(slide, prs)
-
     rank_color = RANK_COLORS[rank - 1] if rank <= 3 else WHITE
 
-    # ランク番号（大きく左上）
-    tf_rank = slide.shapes.add_textbox(Inches(0.35), Inches(0.15), Inches(2), Inches(1.0))
-    p = tf_rank.text_frame.paragraphs[0]
-    run = p.add_run()
-    run.text = f"#{rank}"
-    run.font.size = Pt(52)
-    run.font.bold = True
-    run.font.color.rgb = rank_color
-    run.font.name = "Arial Black"
+    # ランク番号
+    add_text(slide, f"#{rank}", Inches(0.35), Inches(0.1), Inches(2), Inches(0.85),
+             48, rank_color, bold=True, name="Arial Black")
 
-    # サムネイル（左半分）
+    # サムネイル
     thumb = get_thumbnail(item["url"])
-    thumb_x, thumb_y, thumb_w, thumb_h = Inches(0.35), Inches(1.25), Inches(4.8), Inches(2.7)
     if thumb:
         try:
-            slide.shapes.add_picture(thumb, thumb_x, thumb_y, thumb_w, thumb_h)
+            slide.shapes.add_picture(thumb, Inches(0.35), Inches(1.05), Inches(4.8), Inches(2.7))
         except Exception:
             pass
 
-    # タイトル（右側）
-    title = item["title"]
-    tf_title = slide.shapes.add_textbox(Inches(5.4), Inches(1.0), Inches(4.3), Inches(2.2))
-    tf_title.text_frame.word_wrap = True
-    p_title = tf_title.text_frame.paragraphs[0]
-    run_title = p_title.add_run()
-    run_title.text = title
-    run_title.font.size = Pt(16)
-    run_title.font.bold = True
-    run_title.font.color.rgb = WHITE
-    run_title.font.name = "Arial"
+    # タイトル
+    add_text(slide, item["title"], Inches(5.4), Inches(0.85), Inches(4.3), Inches(1.6),
+             14, WHITE, bold=True, wrap=True)
 
     # チャンネル名
-    tf_ch = slide.shapes.add_textbox(Inches(5.4), Inches(3.3), Inches(4.3), Inches(0.4))
-    p_ch = tf_ch.text_frame.paragraphs[0]
-    run_ch = p_ch.add_run()
-    run_ch.text = f"📺  {item['channel']}"
-    run_ch.font.size = Pt(12)
-    run_ch.font.color.rgb = GRAY
-    run_ch.font.name = "Arial"
+    add_text(slide, f"📺  {item['channel']}", Inches(5.4), Inches(2.55), Inches(4.3), Inches(0.32),
+             11, GRAY)
 
-    # 再生数
+    # 再生数・いいね・コメント
     views = int(item["views"])
-    tf_views = slide.shapes.add_textbox(Inches(5.4), Inches(3.75), Inches(4.3), Inches(0.4))
-    p_views = tf_views.text_frame.paragraphs[0]
-    run_views = p_views.add_run()
-    run_views.text = f"👁  {views:,} 回視聴"
-    run_views.font.size = Pt(13)
-    run_views.font.bold = True
-    run_views.font.color.rgb = rank_color
-    run_views.font.name = "Arial"
+    likes = int(item.get("likes", 0))
+    comments = int(item.get("comments", 0))
+    growth = item.get("growth_rate")
+    growth_str = f"  📈+{growth}%" if growth and growth > 0 else ""
+    add_text(slide, f"👁 {views:,}  👍 {likes:,}  💬 {comments:,}{growth_str}",
+             Inches(5.4), Inches(2.92), Inches(4.3), Inches(0.35), 11, rank_color, bold=True)
 
-    # 下部にYouTubeリンク
-    tf_url = slide.shapes.add_textbox(Inches(0.35), Inches(4.9), Inches(9.3), Inches(0.4))
-    p_url = tf_url.text_frame.paragraphs[0]
-    run_url = p_url.add_run()
-    run_url.text = item["url"]
-    run_url.font.size = Pt(9)
-    run_url.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
-    run_url.font.name = "Arial"
+    # 動画の長さ・公開日時
+    duration = item.get("duration", "不明")
+    published_at = item.get("published_at", "")
+    hours = hours_since_published(published_at)
+    hours_str = f"  ·  公開{hours}時間前" if hours is not None and hours <= 168 else f"  ·  公開 {published_at[:10]}"
+    add_text(slide, f"⏱ {duration}{hours_str}",
+             Inches(5.4), Inches(3.3), Inches(4.3), Inches(0.32), 11, GRAY)
+
+    # 分析コメント
+    comment = generate_comment(item)
+    add_text(slide, f"💡 {comment}", Inches(0.35), Inches(3.88), Inches(9.3), Inches(0.6),
+             11, TEAL, wrap=True)
+
+    # URL
+    add_text(slide, item["url"], Inches(0.35), Inches(4.9), Inches(9.3), Inches(0.32),
+             9, RGBColor(0x44, 0x44, 0x44))
 
 
 def make_first_place_slide(prs, item):
-    """1位専用スライド（特別演出）"""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-
-    # 背景：深い黒
     add_bg(slide, prs, RGBColor(0x08, 0x08, 0x08))
 
-    # 金色のアクセントライン（上下）
     for y_pos in [Inches(0), Inches(5.5)]:
         line = slide.shapes.add_shape(1, Inches(0), y_pos, prs.slide_width, Inches(0.12))
         line.fill.solid()
         line.fill.fore_color.rgb = GOLD
         line.line.fill.background()
 
-    # 🏆 と NO.1テキスト
-    tf_crown = slide.shapes.add_textbox(Inches(0), Inches(0.12), Inches(10), Inches(1.1))
-    p_crown = tf_crown.text_frame.paragraphs[0]
-    p_crown.alignment = PP_ALIGN.CENTER
-    run_crown = p_crown.add_run()
-    run_crown.text = "🏆  NO. 1  🏆"
-    run_crown.font.size = Pt(38)
-    run_crown.font.bold = True
-    run_crown.font.color.rgb = GOLD
-    run_crown.font.name = "Arial Black"
+    add_text(slide, "🏆  NO. 1  🏆", Inches(0), Inches(0.12), Inches(10), Inches(0.95),
+             36, GOLD, bold=True, align=PP_ALIGN.CENTER, name="Arial Black")
 
-    # サムネイル（中央・大きめ）
     thumb = get_thumbnail(item["url"])
-    thumb_w, thumb_h = Inches(5.5), Inches(3.09)
-    thumb_x = (Inches(10) - thumb_w) / 2
-    thumb_y = Inches(1.3)
     if thumb:
         try:
-            slide.shapes.add_picture(thumb, thumb_x, thumb_y, thumb_w, thumb_h)
+            thumb_w, thumb_h = Inches(5.5), Inches(3.09)
+            slide.shapes.add_picture(thumb, (Inches(10) - thumb_w) / 2, Inches(1.12), thumb_w, thumb_h)
         except Exception:
             pass
 
-    # 動画タイトル
     title = item["title"][:55] + ("…" if len(item["title"]) > 55 else "")
-    tf_title = slide.shapes.add_textbox(Inches(0.3), Inches(4.45), Inches(9.4), Inches(0.65))
-    tf_title.text_frame.word_wrap = True
-    p_title = tf_title.text_frame.paragraphs[0]
-    p_title.alignment = PP_ALIGN.CENTER
-    run_title = p_title.add_run()
-    run_title.text = title
-    run_title.font.size = Pt(15)
-    run_title.font.bold = True
-    run_title.font.color.rgb = WHITE
-    run_title.font.name = "Arial"
+    add_text(slide, title, Inches(0.3), Inches(4.25), Inches(9.4), Inches(0.5),
+             14, WHITE, bold=True, align=PP_ALIGN.CENTER, wrap=True)
 
-    # チャンネル & 再生数
+    # 再生数・いいね・コメント・動画長・公開日時
     views = int(item["views"])
-    tf_info = slide.shapes.add_textbox(Inches(0.3), Inches(5.05), Inches(9.4), Inches(0.35))
-    p_info = tf_info.text_frame.paragraphs[0]
-    p_info.alignment = PP_ALIGN.CENTER
-    run_info = p_info.add_run()
-    run_info.text = f"📺 {item['channel']}  ·  👁 {views:,} 回視聴"
-    run_info.font.size = Pt(11)
-    run_info.font.color.rgb = GOLD
-    run_info.font.name = "Arial"
+    likes = int(item.get("likes", 0))
+    comments_count = int(item.get("comments", 0))
+    duration = item.get("duration", "")
+    published_at = item.get("published_at", "")
+    hours = hours_since_published(published_at)
+    hours_str = f"公開{hours}時間前" if hours is not None and hours <= 168 else published_at[:10]
+    add_text(slide,
+             f"👁 {views:,}  👍 {likes:,}  💬 {comments_count:,}  ⏱ {duration}  📅 {hours_str}",
+             Inches(0.3), Inches(4.78), Inches(9.4), Inches(0.32),
+             11, GOLD, align=PP_ALIGN.CENTER)
+
+    comment = generate_comment(item)
+    add_text(slide, f"💡 {comment}", Inches(0.3), Inches(5.13), Inches(9.4), Inches(0.32),
+             10, TEAL, align=PP_ALIGN.CENTER, wrap=True)
 
 
 def make_keyword_slide(prs, label, items):
-    """キーワード別TOP5スライド"""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_bg(slide, prs)
-
     emoji = {"エンタメ": "🎬", "ゲーム": "🎮", "アニメ": "✨", "映画": "🍿"}.get(label, "📌")
-
-    tf = slide.shapes.add_textbox(Inches(0.4), Inches(0.15), Inches(9), Inches(0.55))
-    p = tf.text_frame.paragraphs[0]
-    run = p.add_run()
-    run.text = f"{emoji} {label} 人気動画 TOP {min(5, len(items))}"
-    run.font.size = Pt(22)
-    run.font.bold = True
-    run.font.color.rgb = WHITE
-    run.font.name = "Arial Black"
+    add_text(slide, f"{emoji} {label} 人気動画 TOP {min(5, len(items))}",
+             Inches(0.4), Inches(0.15), Inches(9), Inches(0.55), 22, WHITE, bold=True, name="Arial Black")
 
     card_h = Inches(0.88)
-    thumb_w = Inches(1.9)
-    thumb_h = Inches(1.07)
-
     for i, item in enumerate(items[:5]):
         rank = int(item["rank"])
         y = Inches(0.82) + i * (card_h + Inches(0.08))
-
         card = slide.shapes.add_shape(1, Inches(0.3), y, Inches(9.4), card_h)
         card.fill.solid()
         card.fill.fore_color.rgb = BG_CARD
@@ -269,44 +296,29 @@ def make_keyword_slide(prs, label, items):
         thumb = get_thumbnail(item["url"])
         if thumb:
             try:
-                slide.shapes.add_picture(thumb, Inches(0.35), y, thumb_w, thumb_h)
+                slide.shapes.add_picture(thumb, Inches(0.35), y, Inches(1.9), Inches(1.07))
             except Exception:
                 pass
 
         rank_color = RANK_COLORS[rank - 1] if rank <= 3 else GRAY
-        tf_rank = slide.shapes.add_textbox(Inches(2.4), y + Inches(0.05), Inches(0.6), Inches(0.6))
-        p_rank = tf_rank.text_frame.paragraphs[0]
-        run_rank = p_rank.add_run()
-        run_rank.text = f"#{rank}"
-        run_rank.font.size = Pt(15)
-        run_rank.font.bold = True
-        run_rank.font.color.rgb = rank_color
-        run_rank.font.name = "Arial Black"
+        add_text(slide, f"#{rank}", Inches(2.4), y + Inches(0.04), Inches(0.6), Inches(0.4),
+                 15, rank_color, bold=True, name="Arial Black")
 
-        title = item["title"][:45] + ("…" if len(item["title"]) > 45 else "")
-        tf_title = slide.shapes.add_textbox(Inches(2.95), y + Inches(0.05), Inches(6.6), Inches(0.45))
-        tf_title.text_frame.word_wrap = True
-        p_title = tf_title.text_frame.paragraphs[0]
-        run_title = p_title.add_run()
-        run_title.text = title
-        run_title.font.size = Pt(13)
-        run_title.font.bold = True
-        run_title.font.color.rgb = WHITE
-        run_title.font.name = "Arial"
+        title = item["title"][:42] + ("…" if len(item["title"]) > 42 else "")
+        add_text(slide, title, Inches(2.95), y + Inches(0.04), Inches(6.6), Inches(0.38),
+                 12, WHITE, bold=True, wrap=True)
 
         views = int(item["views"])
-        tf_info = slide.shapes.add_textbox(Inches(2.95), y + Inches(0.52), Inches(6.6), Inches(0.32))
-        p_info = tf_info.text_frame.paragraphs[0]
-        run_info = p_info.add_run()
-        run_info.text = f"📺 {item['channel']}  ·  👁 {views:,} 回視聴"
-        run_info.font.size = Pt(10)
-        run_info.font.color.rgb = GRAY
-        run_info.font.name = "Arial"
+        likes = int(item.get("likes", 0))
+        duration = item.get("duration", "")
+        published_at = item.get("published_at", "")[:10]
+        add_text(slide,
+                 f"📺 {item['channel']}  👁 {views:,}  👍 {likes:,}  ⏱ {duration}  📅 {published_at}",
+                 Inches(2.95), y + Inches(0.50), Inches(6.6), Inches(0.32), 10, GRAY)
 
 
 def main():
     print(f"🚀 PPT生成開始: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-
     trending, keyword_items = load_csv()
     if not trending and not keyword_items:
         print("❌ データがありません")
@@ -316,21 +328,15 @@ def main():
     prs.slide_width  = Inches(10)
     prs.slide_height = Inches(5.625)
 
-    date_str = datetime.now().strftime("%Y年%m月%d日")
+    make_title_slide(prs, datetime.now().strftime("%Y年%m月%d日"))
 
-    # 1. タイトルスライド
-    make_title_slide(prs, date_str)
-
-    # 2. 急上昇：10位→2位（降順）
     top10 = trending[:10]
-    for item in sorted(top10[1:], key=lambda x: int(x["rank"]), reverse=True):  # 10位→2位
+    for item in sorted(top10[1:], key=lambda x: int(x["rank"]), reverse=True):
         make_rank_slide(prs, item, int(item["rank"]))
 
-    # 3. 1位（特別スライド）
     if top10:
         make_first_place_slide(prs, top10[0])
 
-    # 4. キーワード別スライド
     for label, items in keyword_items.items():
         make_keyword_slide(prs, label, items)
 
