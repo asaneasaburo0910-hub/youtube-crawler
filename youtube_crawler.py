@@ -17,13 +17,35 @@ SEARCH_QUERIES = [
 ]
 
 
+def parse_duration(iso_duration):
+    """ISO 8601形式の動画長を分:秒に変換（例: PT4M13S → 4:13）"""
+    import re
+    match = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', iso_duration)
+    if not match:
+        return "不明"
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
+def format_published(published_at):
+    """公開日時を日本時間に変換（例: 2026-05-09T10:00:00Z → 2026-05-09 19:00）"""
+    from datetime import timezone, timedelta
+    dt = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ")
+    jst = dt.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=9)))
+    return jst.strftime("%Y-%m-%d %H:%M")
+
+
 def fetch_youtube_trending():
     """YouTubeの急上昇動画を取得（日本）"""
     results = []
     try:
         url = "https://www.googleapis.com/youtube/v3/videos"
         params = {
-            "part": "snippet,statistics",
+            "part": "snippet,statistics,contentDetails",  # contentDetailsで動画長を取得
             "chart": "mostPopular",
             "regionCode": "JP",
             "maxResults": 20,
@@ -32,7 +54,6 @@ def fetch_youtube_trending():
         res = requests.get(url, params=params, timeout=15)
         data = res.json()
 
-        # デバッグ：レスポンス全体を表示
         if "error" in data:
             print(f"❌ APIエラー: {data['error']}")
             return results
@@ -40,7 +61,9 @@ def fetch_youtube_trending():
         for i, item in enumerate(data.get("items", []), 1):
             snippet = item.get("snippet", {})
             stats = item.get("statistics", {})
+            content = item.get("contentDetails", {})
             results.append({
+                "source": "急上昇動画",
                 "type": "急上昇動画",
                 "label": "総合",
                 "title": snippet.get("title", ""),
@@ -48,6 +71,8 @@ def fetch_youtube_trending():
                 "views": int(stats.get("viewCount", 0)),
                 "likes": int(stats.get("likeCount", 0)),
                 "comments": int(stats.get("commentCount", 0)),
+                "duration": parse_duration(content.get("duration", "PT0S")),
+                "published_at": format_published(snippet.get("publishedAt", "2000-01-01T00:00:00Z")),
                 "rank": i,
                 "url": f"https://www.youtube.com/watch?v={item['id']}",
                 "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -79,19 +104,18 @@ def fetch_youtube_search(query_info):
         res = requests.get(url, params=params, timeout=15)
         data = res.json()
 
-        # デバッグ：エラー詳細を表示
         if "error" in data:
             print(f"❌ {query_info['label']} APIエラー: {data['error']['message']}")
             return results
 
         video_ids = [item["id"]["videoId"] for item in data.get("items", [])]
         if not video_ids:
-            print(f"⚠️ {query_info['label']}: 動画IDが取得できませんでした")
             return results
 
+        # 詳細情報取得（contentDetails追加）
         stats_url = "https://www.googleapis.com/youtube/v3/videos"
         stats_params = {
-            "part": "snippet,statistics",
+            "part": "snippet,statistics,contentDetails",
             "id": ",".join(video_ids),
             "key": YOUTUBE_API_KEY,
         }
@@ -108,7 +132,9 @@ def fetch_youtube_search(query_info):
         for i, item in enumerate(items, 1):
             snippet = item.get("snippet", {})
             stats = item.get("statistics", {})
+            content = item.get("contentDetails", {})
             results.append({
+                "source": "キーワード検索",
                 "type": "キーワード検索",
                 "label": query_info["label"],
                 "title": snippet.get("title", ""),
@@ -116,6 +142,8 @@ def fetch_youtube_search(query_info):
                 "views": int(stats.get("viewCount", 0)),
                 "likes": int(stats.get("likeCount", 0)),
                 "comments": int(stats.get("commentCount", 0)),
+                "duration": parse_duration(content.get("duration", "PT0S")),
+                "published_at": format_published(snippet.get("publishedAt", "2000-01-01T00:00:00Z")),
                 "rank": i,
                 "url": f"https://www.youtube.com/watch?v={item['id']}",
                 "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -131,10 +159,11 @@ def fetch_youtube_search(query_info):
 
 def save_csv(items):
     file_exists = os.path.exists(OUTPUT_FILE)
-    fieldnames = ["type", "label", "title", "channel", "views", "likes", "comments", "rank", "url", "fetched_at"]
+    fieldnames = ["type", "label", "title", "channel", "views", "likes", "comments",
+                  "duration", "published_at", "rank", "url", "fetched_at"]
 
     with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         if not file_exists:
             writer.writeheader()
         writer.writerows(items)
@@ -159,7 +188,7 @@ def main():
 
     print("\n📊 急上昇動画 トップ5:")
     for item in [i for i in all_results if i["type"] == "急上昇動画"][:5]:
-        print(f"  {item['rank']}. {item['title'][:40]} (再生数: {item['views']:,})")
+        print(f"  {item['rank']}. {item['title'][:40]} (再生数: {item['views']:,} / {item['duration']} / 公開: {item['published_at']})")
 
     print(f"\n✨ 完了！合計 {len(all_results)} 件")
 
