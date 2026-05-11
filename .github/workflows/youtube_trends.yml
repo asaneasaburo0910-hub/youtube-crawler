@@ -2,7 +2,7 @@ name: YouTubeトレンド収集
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # 毎日 日本時間 朝11時（UTC 2時）に実行
+    - cron: '55 12 * * *'  # テスト：日本時間 21:55に実行
   workflow_dispatch:
 
 permissions:
