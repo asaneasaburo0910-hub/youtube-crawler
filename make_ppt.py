@@ -1,6 +1,7 @@
 import csv
 import os
 import requests
+import qrcode
 from datetime import datetime, timezone, timedelta
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -23,6 +24,18 @@ TEAL     = RGBColor(0x4E, 0xC9, 0xB0)
 RANK_COLORS = [GOLD, SILVER, BRONZE]
 
 
+def make_qr(url):
+    """URLからQRコードのBytesIOを生成"""
+    qr = qrcode.QRCode(version=1, box_size=6, border=2)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+
 def load_csv():
     if not os.path.exists(CSV_FILE):
         print(f"❌ {CSV_FILE} が見つかりません")
@@ -36,7 +49,6 @@ def load_csv():
 
     latest_time = max(r["fetched_at"] for r in rows)
 
-    # 前日データで伸び率計算
     prev_rows = [r for r in rows if r["fetched_at"] != latest_time and r["type"] == "急上昇動画"]
     prev_views = {}
     if prev_rows:
@@ -70,35 +82,28 @@ def load_csv():
 
 
 def hours_since_published(published_at):
-    """公開からの経過時間（時間）を返す"""
     try:
         dt = datetime.strptime(published_at, "%Y-%m-%d %H:%M")
-        now = datetime.now()
-        diff = now - dt
-        return int(diff.total_seconds() / 3600)
+        return int((datetime.now() - dt).total_seconds() / 3600)
     except Exception:
         return None
 
 
 def generate_comment(item):
-    """ルールベースで分析コメントを生成"""
     comments = []
     views = int(item["views"])
     likes = int(item.get("likes", 0))
     comment_count = int(item.get("comments", 0))
-    rank = int(item["rank"])
     growth = item.get("growth_rate")
     published_at = item.get("published_at", "")
     hours = hours_since_published(published_at)
 
-    # 公開からの時間
     if hours is not None:
         if hours <= 24:
             comments.append(f"公開{hours}時間で急上昇入り！")
         elif hours <= 72:
             comments.append(f"公開{hours//24}日で急上昇")
 
-    # 再生数
     if views >= 5_000_000:
         comments.append("500万再生超の超バズ動画")
     elif views >= 1_000_000:
@@ -110,7 +115,6 @@ def generate_comment(item):
     else:
         comments.append("急上昇中の新興コンテンツ")
 
-    # 伸び率
     if growth is not None:
         if growth >= 200:
             comments.append(f"前日比+{growth}%の爆発的な伸び")
@@ -119,7 +123,6 @@ def generate_comment(item):
         elif growth >= 10:
             comments.append(f"前日比+{growth}%で着実に成長")
 
-    # いいね率
     if views > 0:
         like_rate = likes / views * 100
         if like_rate >= 5:
@@ -127,7 +130,6 @@ def generate_comment(item):
         elif like_rate >= 2:
             comments.append(f"いいね率{like_rate:.1f}%と好評価")
 
-    # コメント数
     if comment_count >= 10000:
         comments.append("コメント1万超の大反響")
     elif comment_count >= 1000:
@@ -168,10 +170,10 @@ def add_text(slide, text, x, y, w, h, size, color, bold=False, align=PP_ALIGN.LE
     return tf
 
 
-
 def add_text_with_link(slide, text, url, x, y, w, h, size, color, bold=False, align=PP_ALIGN.LEFT, name="Arial", wrap=False):
-    """ハイパーリンク付きテキストを追加"""
-    from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+    """ハイパーリンク付きテキスト"""
+    from pptx.oxml.ns import qn
+    from lxml import etree
     tf = slide.shapes.add_textbox(x, y, w, h)
     tf.text_frame.word_wrap = wrap
     p = tf.text_frame.paragraphs[0]
@@ -183,15 +185,12 @@ def add_text_with_link(slide, text, url, x, y, w, h, size, color, bold=False, al
     run.font.color.rgb = color
     run.font.name = name
     run.font.underline = True
-    # ハイパーリンク設定
     rPr = run._r.get_or_add_rPr()
-    from pptx.oxml.ns import qn
-    from lxml import etree
     hlinkClick = etree.SubElement(rPr, qn('a:hlinkClick'))
-    slide.part.relate_to(url, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink', is_external=True)
     rId = slide.part.relate_to(url, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink', is_external=True)
     hlinkClick.set(qn('r:id'), rId)
     return tf
+
 
 def make_title_slide(prs, date_str):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -219,16 +218,27 @@ def make_rank_slide(prs, item, rank):
     thumb = get_thumbnail(item["url"])
     if thumb:
         try:
-            slide.shapes.add_picture(thumb, Inches(0.35), Inches(1.05), Inches(4.8), Inches(2.7))
+            slide.shapes.add_picture(thumb, Inches(0.35), Inches(1.05), Inches(4.0), Inches(2.25))
         except Exception:
             pass
 
+    # QRコード（サムネイル右下）
+    try:
+        qr_buf = make_qr(item["url"])
+        slide.shapes.add_picture(qr_buf, Inches(0.35), Inches(3.38), Inches(1.1), Inches(1.1))
+    except Exception:
+        pass
+
+    # URL テキスト（QRの右）
+    add_text(slide, item["url"], Inches(1.55), Inches(3.55), Inches(2.85), Inches(0.4),
+             7, GRAY, wrap=False)
+
     # タイトル（リンク付き）
-    add_text_with_link(slide, item["title"], item["url"], Inches(5.4), Inches(0.85), Inches(4.3), Inches(1.6),
-             14, WHITE, bold=True, wrap=True)
+    add_text_with_link(slide, item["title"], item["url"], Inches(4.55), Inches(0.85), Inches(5.1), Inches(1.6),
+                       14, WHITE, bold=True, wrap=True)
 
     # チャンネル名
-    add_text(slide, f"📺  {item['channel']}", Inches(5.4), Inches(2.55), Inches(4.3), Inches(0.32),
+    add_text(slide, f"📺  {item['channel']}", Inches(4.55), Inches(2.55), Inches(5.1), Inches(0.32),
              11, GRAY)
 
     # 再生数・いいね・コメント
@@ -238,21 +248,20 @@ def make_rank_slide(prs, item, rank):
     growth = item.get("growth_rate")
     growth_str = f"  📈+{growth}%" if growth and growth > 0 else ""
     add_text(slide, f"👁 {views:,}  👍 {likes:,}  💬 {comments:,}{growth_str}",
-             Inches(5.4), Inches(2.92), Inches(4.3), Inches(0.35), 11, rank_color, bold=True)
+             Inches(4.55), Inches(2.92), Inches(5.1), Inches(0.35), 11, rank_color, bold=True)
 
     # 動画の長さ・公開日時
     duration = item.get("duration", "不明")
     published_at = item.get("published_at", "")
     hours = hours_since_published(published_at)
-    hours_str = f"  ·  公開{hours}時間前" if hours is not None and hours <= 168 else f"  ·  公開 {published_at[:10]}"
-    add_text(slide, f"⏱ {duration}{hours_str}",
-             Inches(5.4), Inches(3.3), Inches(4.3), Inches(0.32), 11, GRAY)
+    hours_str = f"公開{hours}時間前" if hours is not None and hours <= 168 else f"公開 {published_at[:10]}"
+    add_text(slide, f"⏱ {duration}  ·  📅 {hours_str}",
+             Inches(4.55), Inches(3.32), Inches(5.1), Inches(0.32), 11, GRAY)
 
     # 分析コメント
     comment = generate_comment(item)
-    add_text(slide, f"💡 {comment}", Inches(0.35), Inches(3.88), Inches(9.3), Inches(0.6),
+    add_text(slide, f"💡 {comment}", Inches(0.35), Inches(4.55), Inches(9.3), Inches(0.6),
              11, TEAL, wrap=True)
-
 
 
 def make_first_place_slide(prs, item):
@@ -268,17 +277,26 @@ def make_first_place_slide(prs, item):
     add_text(slide, "🏆  NO. 1  🏆", Inches(0), Inches(0.12), Inches(10), Inches(0.95),
              36, GOLD, bold=True, align=PP_ALIGN.CENTER, name="Arial Black")
 
+    # サムネイル（中央）
     thumb = get_thumbnail(item["url"])
     if thumb:
         try:
-            thumb_w, thumb_h = Inches(5.5), Inches(3.09)
+            thumb_w, thumb_h = Inches(5.0), Inches(2.81)
             slide.shapes.add_picture(thumb, (Inches(10) - thumb_w) / 2, Inches(1.12), thumb_w, thumb_h)
         except Exception:
             pass
 
+    # QRコード（右下）
+    try:
+        qr_buf = make_qr(item["url"])
+        slide.shapes.add_picture(qr_buf, Inches(8.55), Inches(3.98), Inches(1.1), Inches(1.1))
+    except Exception:
+        pass
+
+    # タイトル（リンク付き）
     title = item["title"][:55] + ("…" if len(item["title"]) > 55 else "")
-    add_text_with_link(slide, title, item["url"], Inches(0.3), Inches(4.25), Inches(9.4), Inches(0.5),
-             14, WHITE, bold=True, align=PP_ALIGN.CENTER, wrap=True)
+    add_text_with_link(slide, title, item["url"], Inches(0.3), Inches(4.0), Inches(8.1), Inches(0.5),
+                       14, WHITE, bold=True, align=PP_ALIGN.CENTER, wrap=True)
 
     # 再生数・いいね・コメント・動画長・公開日時
     views = int(item["views"])
@@ -288,14 +306,17 @@ def make_first_place_slide(prs, item):
     published_at = item.get("published_at", "")
     hours = hours_since_published(published_at)
     hours_str = f"公開{hours}時間前" if hours is not None and hours <= 168 else published_at[:10]
-    add_text(slide,
-             f"👁 {views:,}  👍 {likes:,}  💬 {comments_count:,}  ⏱ {duration}  📅 {hours_str}",
-             Inches(0.3), Inches(4.78), Inches(9.4), Inches(0.32),
-             11, GOLD, align=PP_ALIGN.CENTER)
+    add_text(slide, f"👁 {views:,}  👍 {likes:,}  💬 {comments_count:,}  ⏱ {duration}  📅 {hours_str}",
+             Inches(0.3), Inches(4.55), Inches(8.1), Inches(0.32), 11, GOLD, align=PP_ALIGN.CENTER)
 
+    # 分析コメント
     comment = generate_comment(item)
-    add_text(slide, f"💡 {comment}", Inches(0.3), Inches(5.13), Inches(9.4), Inches(0.32),
+    add_text(slide, f"💡 {comment}", Inches(0.3), Inches(4.92), Inches(8.1), Inches(0.32),
              10, TEAL, align=PP_ALIGN.CENTER, wrap=True)
+
+    # URL テキスト（QRの左）
+    add_text(slide, item["url"], Inches(0.3), Inches(4.92), Inches(8.1), Inches(0.25),
+             7, GRAY, align=PP_ALIGN.CENTER)
 
 
 def make_keyword_slide(prs, label, items):
@@ -309,6 +330,7 @@ def make_keyword_slide(prs, label, items):
     for i, item in enumerate(items[:5]):
         rank = int(item["rank"])
         y = Inches(0.82) + i * (card_h + Inches(0.08))
+
         card = slide.shapes.add_shape(1, Inches(0.3), y, Inches(9.4), card_h)
         card.fill.solid()
         card.fill.fore_color.rgb = BG_CARD
@@ -327,16 +349,22 @@ def make_keyword_slide(prs, label, items):
                  15, rank_color, bold=True, name="Arial Black")
 
         title = item["title"][:42] + ("…" if len(item["title"]) > 42 else "")
-        add_text_with_link(slide, title, item["url"], Inches(2.95), y + Inches(0.04), Inches(6.6), Inches(0.38),
-                 12, WHITE, bold=True, wrap=True)
+        add_text_with_link(slide, title, item["url"], Inches(2.95), y + Inches(0.04), Inches(5.7), Inches(0.38),
+                           12, WHITE, bold=True, wrap=True)
+
+        # QRコード（右端）
+        try:
+            qr_buf = make_qr(item["url"])
+            slide.shapes.add_picture(qr_buf, Inches(8.8), y + Inches(0.06), Inches(0.75), Inches(0.75))
+        except Exception:
+            pass
 
         views = int(item["views"])
         likes = int(item.get("likes", 0))
         duration = item.get("duration", "")
         published_at = item.get("published_at", "")[:10]
-        add_text(slide,
-                 f"📺 {item['channel']}  👁 {views:,}  👍 {likes:,}  ⏱ {duration}  📅 {published_at}",
-                 Inches(2.95), y + Inches(0.50), Inches(6.6), Inches(0.32), 10, GRAY)
+        add_text(slide, f"📺 {item['channel']}  👁 {views:,}  👍 {likes:,}  ⏱ {duration}  📅 {published_at}",
+                 Inches(2.95), y + Inches(0.50), Inches(5.7), Inches(0.32), 10, GRAY)
 
 
 def main():
