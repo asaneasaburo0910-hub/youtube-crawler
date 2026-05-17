@@ -27,7 +27,7 @@ jobs:
           python-version: '3.11'
 
       - name: ライブラリインストール
-        run: pip install python-pptx requests
+        run: pip install python-pptx requests qrcode[pil]
 
       - name: PPT生成
         run: python make_ppt.py
