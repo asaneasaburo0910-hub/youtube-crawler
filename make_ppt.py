@@ -314,8 +314,8 @@ def make_first_place_slide(prs, item):
     add_text(slide, f"💡 {comment}", Inches(0.3), Inches(4.92), Inches(8.1), Inches(0.32),
              10, TEAL, align=PP_ALIGN.CENTER, wrap=True)
 
-    # URL テキスト（QRの左）
-    add_text(slide, item["url"], Inches(0.3), Inches(4.92), Inches(8.1), Inches(0.25),
+    # URL テキスト
+    add_text(slide, item["url"], Inches(0.3), Inches(5.28), Inches(8.1), Inches(0.25),
              7, GRAY, align=PP_ALIGN.CENTER)
 
 
@@ -365,6 +365,9 @@ def make_keyword_slide(prs, label, items):
         published_at = item.get("published_at", "")[:10]
         add_text(slide, f"📺 {item['channel']}  👁 {views:,}  👍 {likes:,}  ⏱ {duration}  📅 {published_at}",
                  Inches(2.95), y + Inches(0.50), Inches(5.7), Inches(0.32), 10, GRAY)
+        # URL テキスト
+        add_text(slide, item["url"], Inches(2.95), y + Inches(0.70), Inches(5.7), Inches(0.22),
+                 7, RGBColor(0x66, 0x66, 0x66))
 
 
 def main():
