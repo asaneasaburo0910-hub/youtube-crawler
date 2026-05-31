@@ -308,7 +308,7 @@ def make_first_place_slide(prs, item):
     # QRコード（右下）
     try:
         qr_buf = make_qr(item["url"])
-        slide.shapes.add_picture(qr_buf, Inches(8.55), Inches(3.98), Inches(1.1), Inches(1.1))
+        slide.shapes.add_picture(qr_buf, Inches(0.1), Inches(3.98), Inches(1.1), Inches(1.1))
     except Exception:
         pass
 
