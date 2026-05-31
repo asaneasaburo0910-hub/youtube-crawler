@@ -182,12 +182,12 @@ def make_rank_slide(prs, item, rank):
     # QRコード（右下）
     try:
         qr_buf = make_qr(item["url"])
-        slide.shapes.add_picture(qr_buf, SLIDE_W - Inches(1.6), Inches(8.8), Inches(1.4), Inches(1.4))
+        slide.shapes.add_picture(qr_buf, Inches(0.1), Inches(8.8), Inches(1.4), Inches(1.4))
     except Exception:
         pass
 
     # URL
-    add_text(slide, "▲ QRコードで視聴", Inches(0.2), Inches(9.1), SLIDE_W - Inches(1.8), Inches(0.4),
+    add_text(slide, "▲ QRコードで視聴", Inches(1.6), Inches(9.1), SLIDE_W - Inches(1.8), Inches(0.4),
              12, GRAY, align=PP_ALIGN.LEFT)
     add_zundamon(slide)
 
@@ -238,13 +238,12 @@ def make_first_place_slide(prs, item):
     # QRコード（中央下）
     try:
         qr_buf = make_qr(item["url"])
-        qr_x = (SLIDE_W - Inches(1.8)) / 2
-        slide.shapes.add_picture(qr_buf, qr_x, Inches(8.5), Inches(1.8), Inches(1.8))
+        slide.shapes.add_picture(qr_buf, Inches(0.1), Inches(8.5), Inches(1.8), Inches(1.8))
     except Exception:
         pass
 
-    add_text(slide, "▲ QRコードで視聴", Inches(0), Inches(10.1), SLIDE_W, Inches(0.4),
-             12, GRAY)
+    add_text(slide, "▲ QRコードで視聴", Inches(2.0), Inches(9.1), SLIDE_W - Inches(2.1), Inches(0.4),
+             12, GRAY, align=PP_ALIGN.LEFT)
     add_zundamon(slide)
 
 
