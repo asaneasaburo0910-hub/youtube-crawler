@@ -1,35 +1,50 @@
 name: YouTube PPT生成
+
 on:
   workflow_run:
     workflows: ["YouTubeトレンド収集"]
     types:
       - completed
   workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
   make_ppt:
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
     steps:
       - name: コードをチェックアウト
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Python セットアップ
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: ライブラリインストール
-        run: pip install python-pptx requests qrcode[pil]
+        run: pip install python-pptx requests qrcode[pil] Pillow
+
+      - name: フォントインストール
+        run: sudo apt-get install -y fonts-noto-cjk
+
       - name: PPT生成
         run: python make_ppt.py
+
       - name: ショートPPT生成
         run: python make_short_ppt.py
-      - name: PPTを保存
+
+      - name: サムネイル生成
+        run: python make_thumbnail.py
+
+      - name: ファイルを保存
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add "youtube_ranking_*.pptx" "youtube_short_*.pptx"
-          git commit -m "📊 PPT生成: $(date '+%Y-%m-%d')" || echo "変更なし"
+          git add "youtube_ranking_*.pptx" "youtube_short_*.pptx" "thumbnail_*.jpg"
+          git commit -m "📊 PPT・サムネイル生成: $(date '+%Y-%m-%d')" || echo "変更なし"
           git push --force
