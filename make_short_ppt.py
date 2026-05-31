@@ -13,6 +13,9 @@ CSV_FILE = "youtube_trends.csv"
 OUTPUT_FILE = f"youtube_short_{datetime.now().strftime('%Y%m%d')}.pptx"
 
 # 縦長（9:16）サイズ
+ZUNDAMON_GIF = "zundamon-an.gif"
+
+# 縦長（9:16）サイズ
 SLIDE_W = Inches(6.0)
 SLIDE_H = Inches(10.67)
 
@@ -89,6 +92,20 @@ def add_text(slide, text, x, y, w, h, size, color, bold=False, align=PP_ALIGN.CE
     return tf
 
 
+
+def add_zundamon(slide):
+    """右下にずんだもんGIFを挿入"""
+    if not os.path.exists(ZUNDAMON_GIF):
+        print("⚠️ zundamon-an.gif が見つかりません")
+        return
+    try:
+        size = Inches(2.2)
+        x = SLIDE_W - size - Inches(0.05)
+        y = SLIDE_H - size - Inches(0.05)
+        slide.shapes.add_picture(ZUNDAMON_GIF, x, y, size, size)
+    except Exception as e:
+        print(f"⚠️ ずんだもん挿入失敗: {e}")
+
 def make_title_slide(prs, date_str):
     """タイトルスライド"""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -119,6 +136,7 @@ def make_title_slide(prs, date_str):
     # ずんだもん用スペース（下部）
     add_text(slide, "ずんだもんと一緒に見ていくのだ！", Inches(0.2), Inches(7.5), SLIDE_W - Inches(0.4), Inches(1.0),
              18, TEAL, bold=True)
+    add_zundamon(slide)
 
 
 def make_rank_slide(prs, item, rank):
@@ -171,6 +189,7 @@ def make_rank_slide(prs, item, rank):
     # URL
     add_text(slide, "▲ QRコードで視聴", Inches(0.2), Inches(9.1), SLIDE_W - Inches(1.8), Inches(0.4),
              12, GRAY, align=PP_ALIGN.LEFT)
+    add_zundamon(slide)
 
 
 def make_first_place_slide(prs, item):
@@ -226,6 +245,7 @@ def make_first_place_slide(prs, item):
 
     add_text(slide, "▲ QRコードで視聴", Inches(0), Inches(10.1), SLIDE_W, Inches(0.4),
              12, GRAY)
+    add_zundamon(slide)
 
 
 def make_outro_slide(prs):
@@ -241,6 +261,7 @@ def make_outro_slide(prs):
              24, TEAL, bold=True)
     add_text(slide, "また明日もお楽しみに！", Inches(0.2), Inches(8.5), SLIDE_W - Inches(0.4), Inches(0.8),
              20, GRAY)
+    add_zundamon(slide)
 
 
 def main():
