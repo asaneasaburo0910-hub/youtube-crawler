@@ -12,6 +12,8 @@ from io import BytesIO
 CSV_FILE = "youtube_trends.csv"
 OUTPUT_FILE = f"youtube_ranking_{datetime.now().strftime('%Y%m%d')}.pptx"
 
+ZUNDAMON_GIF = "zundamon-an.gif"
+
 BG_DARK  = RGBColor(0x0F, 0x0F, 0x0F)
 BG_CARD  = RGBColor(0x1E, 0x1E, 0x1E)
 RED      = RGBColor(0xFF, 0x00, 0x00)
@@ -192,6 +194,21 @@ def add_text_with_link(slide, text, url, x, y, w, h, size, color, bold=False, al
     return tf
 
 
+
+def add_zundamon(slide):
+    """右下にずんだもんGIFを挿入"""
+    if not os.path.exists(ZUNDAMON_GIF):
+        print("⚠️ zundamon-an.gif が見つかりません")
+        return
+    try:
+        size = Inches(1.5)
+        from pptx.util import Inches as I
+        x = Inches(10) - size - Inches(0.05)
+        y = Inches(5.625) - size - Inches(0.05)
+        slide.shapes.add_picture(ZUNDAMON_GIF, x, y, size, size)
+    except Exception as e:
+        print(f"⚠️ ずんだもん挿入失敗: {e}")
+
 def make_title_slide(prs, date_str):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_bg(slide, prs)
@@ -203,6 +220,7 @@ def make_title_slide(prs, date_str):
              34, WHITE, bold=True, align=PP_ALIGN.CENTER, name="Arial Black")
     add_text(slide, f"{date_str}  ·  急上昇 TOP 10 発表", Inches(0.5), Inches(3.6), Inches(9), Inches(0.6),
              15, GRAY, align=PP_ALIGN.CENTER)
+    add_zundamon(slide)
 
 
 def make_rank_slide(prs, item, rank):
@@ -262,6 +280,7 @@ def make_rank_slide(prs, item, rank):
     comment = generate_comment(item)
     add_text(slide, f"💡 {comment}", Inches(0.35), Inches(4.55), Inches(9.3), Inches(0.6),
              11, TEAL, wrap=True)
+    add_zundamon(slide)
 
 
 def make_first_place_slide(prs, item):
@@ -317,6 +336,7 @@ def make_first_place_slide(prs, item):
     # URL テキスト
     add_text(slide, item["url"], Inches(0.3), Inches(5.28), Inches(8.1), Inches(0.25),
              7, GRAY, align=PP_ALIGN.CENTER)
+    add_zundamon(slide)
 
 
 def make_keyword_slide(prs, label, items):
