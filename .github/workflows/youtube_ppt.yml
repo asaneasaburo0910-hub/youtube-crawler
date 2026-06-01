@@ -27,7 +27,7 @@ jobs:
           python-version: '3.11'
 
       - name: ライブラリインストール
-        run: pip install python-pptx requests qrcode[pil] Pillow
+        run: pip install python-pptx requests qrcode[pil] Pillow reportlab
 
       - name: フォントインストール
         run: sudo apt-get install -y fonts-noto-cjk
@@ -41,10 +41,16 @@ jobs:
       - name: サムネイル生成
         run: python make_thumbnail.py
 
+      - name: 概要欄生成
+        run: python make_description.py
+
+      - name: PDFランキング生成
+        run: python make_pdf_ranking.py
+
       - name: ファイルを保存
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add "youtube_ranking_*.pptx" "youtube_short_*.pptx" "thumbnail_*.jpg"
+          git add "youtube_ranking_*.pptx" "youtube_short_*.pptx" "thumbnail_*.jpg" "description_*.txt" "ranking_data_*.pdf"
           git commit -m "📊 PPT・サムネイル生成: $(date '+%Y-%m-%d')" || echo "変更なし"
           git push --force
