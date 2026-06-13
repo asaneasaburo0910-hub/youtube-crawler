@@ -15,6 +15,7 @@ from reportlab.platypus import (
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
 # ============================
 # 設定
@@ -36,35 +37,15 @@ C_ACCENT   = HexColor("#7C3AED")
 
 
 def setup_fonts():
-    """日本語フォントをダウンロードしてセットアップ"""
-    import urllib.request
-
-    font_url_bold = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/SubsetOTF/JP/NotoSansJP-Bold.otf"
-    font_url_regular = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf"
-    font_path_bold = "/tmp/NotoSansJP-Bold.otf"
-    font_path_regular = "/tmp/NotoSansJP-Regular.otf"
-
-    registered = set()
-
-    for url, path, name in [
-        (font_url_bold, font_path_bold, "NotoSansJP-Bold"),
-        (font_url_regular, font_path_regular, "NotoSansJP"),
-    ]:
-        try:
-            if not os.path.exists(path):
-                print(f"📥 フォントダウンロード中: {name}")
-                urllib.request.urlretrieve(url, path)
-            pdfmetrics.registerFont(TTFont(name, path))
-            registered.add(name)
-            print(f"✅ フォント登録: {name}")
-        except Exception as e:
-            print(f"⚠️ フォント失敗: {name} → {e}")
-
-    if "NotoSansJP-Bold" not in registered:
-        print("⚠️ 日本語フォントなし。Helveticaを使用")
+    """日本語CIDフォントを使用（ReportLab標準対応）"""
+    try:
+        pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
+        pdfmetrics.registerFont(UnicodeCIDFont("HeiseiMin-W3"))
+        print("✅ CIDフォント登録: HeiseiKakuGo-W5 / HeiseiMin-W3")
+        return "HeiseiKakuGo-W5", "HeiseiMin-W3"
+    except Exception as e:
+        print(f"⚠️ CIDフォント失敗: {e}")
         return "Helvetica-Bold", "Helvetica"
-
-    return "NotoSansJP-Bold", "NotoSansJP" if "NotoSansJP" in registered else "NotoSansJP-Bold"
 
 
 def load_all_trending():
