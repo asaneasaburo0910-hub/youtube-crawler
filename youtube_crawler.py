@@ -48,7 +48,7 @@ def fetch_youtube_trending():
             "part": "snippet,statistics,contentDetails",  # contentDetailsで動画長を取得
             "chart": "mostPopular",
             "regionCode": "JP",
-            "maxResults": 20,
+            "maxResults": 50,
             "key": YOUTUBE_API_KEY,
         }
         res = requests.get(url, params=params, timeout=15)
@@ -58,7 +58,18 @@ def fetch_youtube_trending():
             print(f"❌ APIエラー: {data['error']}")
             return results
 
-        for i, item in enumerate(data.get("items", []), 1):
+        items_all = data.get("items", [])
+
+        # 2ページ目を取得（50件追加して合計100件）
+        next_token = data.get("nextPageToken")
+        if next_token:
+            params2 = dict(params)
+            params2["pageToken"] = next_token
+            res2 = requests.get(url, params=params2, timeout=15)
+            data2 = res2.json()
+            items_all += data2.get("items", [])
+
+        for i, item in enumerate(items_all, 1):
             snippet = item.get("snippet", {})
             stats = item.get("statistics", {})
             content = item.get("contentDetails", {})
