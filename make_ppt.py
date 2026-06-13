@@ -12,7 +12,7 @@ from io import BytesIO
 CSV_FILE = "youtube_trends.csv"
 OUTPUT_FILE = f"youtube_ranking_{datetime.now().strftime('%Y%m%d')}.pptx"
 
-ZUNDAMON_GIF = "ezgif_com-animated-gif-maker.gif"
+ZUNDAMON_GIF = "ezgif.com-animated-gif-maker.gif"
 
 BG_DARK  = RGBColor(0x0F, 0x0F, 0x0F)
 BG_CARD  = RGBColor(0x1E, 0x1E, 0x1E)
