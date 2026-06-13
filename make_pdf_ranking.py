@@ -37,21 +37,35 @@ C_ACCENT   = HexColor("#7C3AED")
 
 def setup_fonts():
     """日本語フォントのセットアップ"""
-    font_paths = [
-        ("/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc", "NotoSansJP-Bold"),
-        ("/usr/share/fonts/opentype/noto/NotoSansCJKjp-Bold.otf", "NotoSansJP-Bold"),
-        ("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", "NotoSansJP"),
-        ("/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf", "NotoSansJP"),
+    import glob
+    # 利用可能なNotoフォントを探す
+    search_patterns = [
+        "/usr/share/fonts/**/Noto*CJK*Bold*.ttc",
+        "/usr/share/fonts/**/Noto*CJK*Bold*.otf",
+        "/usr/share/fonts/**/Noto*CJK*Regular*.ttc",
+        "/usr/share/fonts/**/Noto*CJK*Regular*.otf",
+        "/usr/share/fonts/**/NotoSans*Bold*.ttf",
+        "/usr/share/fonts/**/NotoSans*Regular*.ttf",
     ]
+    found_fonts = []
+    for pattern in search_patterns:
+        found_fonts.extend(glob.glob(pattern, recursive=True))
+
+    print(f"🔍 見つかったフォント: {found_fonts[:3]}")
+
     registered = set()
-    for path, name in font_paths:
-        if os.path.exists(path) and name not in registered:
+    for path in found_fonts:
+        name = "NotoSansJP-Bold" if "Bold" in path else "NotoSansJP"
+        if name not in registered:
             try:
                 pdfmetrics.registerFont(TTFont(name, path))
                 registered.add(name)
-            except Exception:
-                pass
+                print(f"✅ フォント登録: {name} ({path})")
+            except Exception as e:
+                print(f"⚠️ フォント登録失敗: {path} → {e}")
+
     if "NotoSansJP-Bold" not in registered:
+        print("⚠️ 日本語フォントなし。Helveticaを使用")
         return "Helvetica-Bold", "Helvetica"
     return "NotoSansJP-Bold", "NotoSansJP" if "NotoSansJP" in registered else "NotoSansJP-Bold"
 
