@@ -12,7 +12,7 @@ from io import BytesIO
 CSV_FILE = "youtube_trends.csv"
 OUTPUT_FILE = f"youtube_ranking_{datetime.now().strftime('%Y%m%d')}.pptx"
 
-ZUNDAMON_GIF = "zundamon-an.gif"
+ZUNDAMON_GIF = "ezgif_com-animated-gif-maker.gif"
 
 BG_DARK  = RGBColor(0x0F, 0x0F, 0x0F)
 BG_CARD  = RGBColor(0x1E, 0x1E, 0x1E)
@@ -195,31 +195,38 @@ def add_text_with_link(slide, text, url, x, y, w, h, size, color, bold=False, al
 
 
 
+# レイアウト定数
+LEFT_W  = Inches(6.5)   # 左エリア幅
+RIGHT_X = Inches(6.6)   # 右エリア開始X
+RIGHT_W = Inches(3.3)   # 右エリア幅（ずんだもん専用）
+SLIDE_H = Inches(5.625)
+
+
 def add_zundamon(slide):
-    """右下にずんだもんGIFを挿入"""
+    """右側全体にずんだもんGIFを大きく表示"""
     if not os.path.exists(ZUNDAMON_GIF):
-        print("⚠️ zundamon-an.gif が見つかりません")
+        print("⚠️ ずんだもんGIFが見つかりません")
         return
     try:
-        size = Inches(1.5)
-        from pptx.util import Inches as I
-        x = Inches(10) - size - Inches(0.05)
-        y = Inches(5.625) - size - Inches(0.05)
-        slide.shapes.add_picture(ZUNDAMON_GIF, x, y, size, size)
+        zunda_h = SLIDE_H - Inches(0.1)
+        zunda_w = RIGHT_W
+        slide.shapes.add_picture(ZUNDAMON_GIF, RIGHT_X, Inches(0.05), zunda_w, zunda_h)
     except Exception as e:
         print(f"⚠️ ずんだもん挿入失敗: {e}")
 
 def make_title_slide(prs, date_str):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_bg(slide, prs)
-    bar = slide.shapes.add_shape(1, Inches(0), Inches(2.1), prs.slide_width, Inches(1.3))
+    # 赤帯（左エリアのみ）
+    bar = slide.shapes.add_shape(1, Inches(0), Inches(2.0), LEFT_W, Inches(1.4))
     bar.fill.solid()
     bar.fill.fore_color.rgb = RED
     bar.line.fill.background()
-    add_text(slide, "▶  YouTube トレンド ランキング", Inches(0.5), Inches(2.18), Inches(9), Inches(1.0),
-             34, WHITE, bold=True, align=PP_ALIGN.CENTER, name="Arial Black")
-    add_text(slide, f"{date_str}  ·  急上昇 TOP 10 発表", Inches(0.5), Inches(3.6), Inches(9), Inches(0.6),
-             15, GRAY, align=PP_ALIGN.CENTER)
+    add_text(slide, "▶  YouTube トレンド ランキング", Inches(0.3), Inches(2.08), LEFT_W - Inches(0.3), Inches(1.0),
+             28, WHITE, bold=True, align=PP_ALIGN.CENTER, name="Arial Black")
+    add_text(slide, f"{date_str}  ·  急上昇 TOP 10 発表", Inches(0.3), Inches(3.55), LEFT_W - Inches(0.3), Inches(0.6),
+             14, GRAY, align=PP_ALIGN.CENTER)
+    # ずんだもん（右側全体）
     add_zundamon(slide)
 
 
@@ -228,36 +235,36 @@ def make_rank_slide(prs, item, rank):
     add_bg(slide, prs)
     rank_color = RANK_COLORS[rank - 1] if rank <= 3 else WHITE
 
-    # ランク番号
-    add_text(slide, f"#{rank}", Inches(0.35), Inches(0.1), Inches(2), Inches(0.85),
+    # ランク番号（左上）
+    add_text(slide, f"#{rank}", Inches(0.3), Inches(0.05), Inches(2.5), Inches(0.85),
              48, rank_color, bold=True, name="Arial Black")
 
-    # サムネイル
+    # サムネイル（左側）
     thumb = get_thumbnail(item["url"])
     if thumb:
         try:
-            slide.shapes.add_picture(thumb, Inches(0.35), Inches(1.05), Inches(4.0), Inches(2.25))
+            slide.shapes.add_picture(thumb, Inches(0.3), Inches(0.95), Inches(3.8), Inches(2.14))
         except Exception:
             pass
 
-    # QRコード（サムネイル右下）
+    # QRコード（左下）
     try:
         qr_buf = make_qr(item["url"])
-        slide.shapes.add_picture(qr_buf, Inches(0.35), Inches(3.38), Inches(1.1), Inches(1.1))
+        slide.shapes.add_picture(qr_buf, Inches(0.3), Inches(3.2), Inches(1.0), Inches(1.0))
     except Exception:
         pass
 
     # URL テキスト（QRの右）
-    add_text(slide, item["url"], Inches(1.55), Inches(3.55), Inches(2.85), Inches(0.4),
+    add_text(slide, item["url"], Inches(1.4), Inches(3.35), Inches(2.8), Inches(0.35),
              7, GRAY, wrap=False)
 
     # タイトル（リンク付き）
-    add_text_with_link(slide, item["title"], item["url"], Inches(4.55), Inches(0.85), Inches(5.1), Inches(1.6),
-                       14, WHITE, bold=True, wrap=True)
+    add_text_with_link(slide, item["title"], item["url"], Inches(4.2), Inches(0.85), LEFT_W - Inches(4.2), Inches(1.5),
+                       13, WHITE, bold=True, wrap=True)
 
     # チャンネル名
-    add_text(slide, f"📺  {item['channel']}", Inches(4.55), Inches(2.55), Inches(5.1), Inches(0.32),
-             11, GRAY)
+    add_text(slide, f"📺  {item['channel']}", Inches(4.2), Inches(2.45), LEFT_W - Inches(4.2), Inches(0.32),
+             10, GRAY)
 
     # 再生数・いいね・コメント
     views = int(item["views"])
@@ -266,7 +273,7 @@ def make_rank_slide(prs, item, rank):
     growth = item.get("growth_rate")
     growth_str = f"  📈+{growth}%" if growth and growth > 0 else ""
     add_text(slide, f"👁 {views:,}  👍 {likes:,}  💬 {comments:,}{growth_str}",
-             Inches(4.55), Inches(2.92), Inches(5.1), Inches(0.35), 11, rank_color, bold=True)
+             Inches(4.2), Inches(2.82), LEFT_W - Inches(4.2), Inches(0.35), 10, rank_color, bold=True)
 
     # 動画の長さ・公開日時
     duration = item.get("duration", "不明")
@@ -274,12 +281,14 @@ def make_rank_slide(prs, item, rank):
     hours = hours_since_published(published_at)
     hours_str = f"公開{hours}時間前" if hours is not None and hours <= 168 else f"公開 {published_at[:10]}"
     add_text(slide, f"⏱ {duration}  ·  📅 {hours_str}",
-             Inches(4.55), Inches(3.32), Inches(5.1), Inches(0.32), 11, GRAY)
+             Inches(4.2), Inches(3.22), LEFT_W - Inches(4.2), Inches(0.32), 10, GRAY)
 
-    # 分析コメント
+    # 分析コメント（左下）
     comment = generate_comment(item)
-    add_text(slide, f"💡 {comment}", Inches(0.35), Inches(4.55), Inches(9.3), Inches(0.6),
-             11, TEAL, wrap=True)
+    add_text(slide, f"💡 {comment}", Inches(0.3), Inches(4.3), LEFT_W - Inches(0.3), Inches(0.9),
+             10, TEAL, wrap=True)
+
+    # ずんだもん（右側全体）
     add_zundamon(slide)
 
 
