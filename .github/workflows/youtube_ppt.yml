@@ -50,10 +50,13 @@ jobs:
       - name: PDFランキング生成
         run: python make_pdf_ranking.py
 
+      - name: ランキングCSV生成
+        run: python make_ranking_csv.py
+
       - name: ファイルを保存
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add "youtube_ranking_*.pptx" "youtube_short_*.pptx" "thumbnail_*.jpg" "description_*.txt" "ranking_data_*.pdf"
+          git add "youtube_ranking_*.pptx" "youtube_short_*.pptx" "thumbnail_*.jpg" "description_*.txt" "ranking_data_*.pdf" "ranking_data_*.csv"
           git commit -m "📊 PPT・サムネイル生成: $(date '+%Y-%m-%d')" || echo "変更なし"
           git push --force
